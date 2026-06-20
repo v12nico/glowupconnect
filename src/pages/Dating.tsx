@@ -38,8 +38,19 @@ export default function Dating() {
 
     const { data } = await query.limit(30)
 
+    const myGender      = profile?.gender ?? 'unspecified'
+    const interestedIn  = profile?.interested_in ?? []
+
     const list = (data ?? [])
-      .filter(t => t.profiles?.in_dating)
+      .filter(t => {
+        const p = t.profiles
+        if (!p?.in_dating) return false
+        // they must be interested in my gender (or have no preference set)
+        const theyWantMe = !p.interested_in?.length || p.interested_in.includes(myGender)
+        // I must be interested in their gender (or I have no preference set)
+        const iWantThem  = !interestedIn.length || interestedIn.includes(p.gender)
+        return theyWantMe && iWantThem
+      })
       .map(t => ({ transformation: t, profile: t.profiles }))
 
     setCandidates(list)
