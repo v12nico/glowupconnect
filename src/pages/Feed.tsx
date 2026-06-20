@@ -1,4 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
+import { Plus } from 'lucide-react'
+import { motion } from 'framer-motion'
 import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/context/AuthContext'
 import type { FeedPost } from '@/types/database'
@@ -10,47 +13,38 @@ type Tab = 'new' | 'trending'
 const PAGE = 20
 
 export default function Feed() {
+  const navigate            = useNavigate()
   const { user }            = useAuth()
   const [tab, setTab]       = useState<Tab>('new')
   const [posts, setPosts]   = useState<FeedPost[]>([])
-  const [loading, setLoading]   = useState(true)
+  const [loading, setLoading]     = useState(true)
   const [loadingMore, setLoadingMore] = useState(false)
-  const [hasMore, setHasMore]   = useState(true)
-  const [error, setError]       = useState<string | null>(null)
-  const pageRef   = useRef(0)
+  const [hasMore, setHasMore]     = useState(true)
+  const [error, setError]         = useState<string | null>(null)
+  const pageRef     = useRef(0)
   const sentinelRef = useRef<HTMLDivElement>(null)
 
   const loadPage = useCallback(async (reset: boolean, currentTab: Tab) => {
     if (!user) return
-    const isFirst = reset
-    if (isFirst) { setLoading(true); setError(null) } else { setLoadingMore(true) }
+    if (reset) { setLoading(true); setError(null) } else { setLoadingMore(true) }
 
-    const offset = isFirst ? 0 : pageRef.current * PAGE
+    const offset = reset ? 0 : pageRef.current * PAGE
 
-    const query = supabase
+    const { data: transformations, error: tErr } = await supabase
       .from('transformations')
       .select('*, profiles!user_id(*)')
+      .order('created_at', { ascending: false })
       .range(offset, offset + PAGE - 1)
-
-    if (currentTab === 'new') {
-      query.order('created_at', { ascending: false })
-    } else {
-      // trending: order by like count via a subquery isn't easy with PostgREST,
-      // so we fetch and sort client-side after enriching
-      query.order('created_at', { ascending: false })
-    }
-
-    const { data: transformations, error: tErr } = await query
 
     if (tErr) {
       setError(tErr.message)
-      if (isFirst) setLoading(false); else setLoadingMore(false)
+      reset ? setLoading(false) : setLoadingMore(false)
       return
     }
 
     if (!transformations?.length) {
       setHasMore(false)
-      if (isFirst) { setPosts([]); setLoading(false) } else { setLoadingMore(false) }
+      if (reset) { setPosts([]); setLoading(false) } else setLoadingMore(false)
       return
     }
 
@@ -62,17 +56,14 @@ export default function Feed() {
       supabase.from('likes').select('transformation_id, revealed_first').eq('user_id', user.id).in('transformation_id', ids),
     ])
 
-    const likeMap:    Record<string, number> = {}
+    const likeMap: Record<string, number>    = {}
     const commentMap: Record<string, number> = {}
-    const myLikeSet:  Set<string>            = new Set()
+    const myLikeSet: Set<string>             = new Set()
     const myRevealSet: Set<string>           = new Set()
 
     likeCounts?.forEach(l => { likeMap[l.transformation_id] = (likeMap[l.transformation_id] ?? 0) + 1 })
     commentCounts?.forEach(c => { commentMap[c.transformation_id] = (commentMap[c.transformation_id] ?? 0) + 1 })
-    myLikes?.forEach(l => {
-      myLikeSet.add(l.transformation_id)
-      if (l.revealed_first) myRevealSet.add(l.transformation_id)
-    })
+    myLikes?.forEach(l => { myLikeSet.add(l.transformation_id); if (l.revealed_first) myRevealSet.add(l.transformation_id) })
 
     let batch: FeedPost[] = transformations.map(t => ({
       transformation:  t,
@@ -83,37 +74,20 @@ export default function Feed() {
       viewer_revealed: myRevealSet.has(t.id),
     }))
 
-    if (currentTab === 'trending') {
-      batch = batch.sort((a, b) => b.like_count - a.like_count)
-    }
+    if (currentTab === 'trending') batch = batch.sort((a, b) => b.like_count - a.like_count)
 
     setHasMore(transformations.length === PAGE)
-    if (isFirst) {
-      pageRef.current = 1
-      setPosts(batch)
-      setLoading(false)
-    } else {
-      pageRef.current += 1
-      setPosts(prev => [...prev, ...batch])
-      setLoadingMore(false)
-    }
+    if (reset) { pageRef.current = 1; setPosts(batch); setLoading(false) }
+    else        { pageRef.current += 1; setPosts(prev => [...prev, ...batch]); setLoadingMore(false) }
   }, [user])
 
-  // reset on tab change
-  useEffect(() => {
-    pageRef.current = 0
-    setHasMore(true)
-    loadPage(true, tab)
-  }, [tab, loadPage])
+  useEffect(() => { pageRef.current = 0; setHasMore(true); loadPage(true, tab) }, [tab, loadPage])
 
-  // IntersectionObserver sentinel
   useEffect(() => {
     const el = sentinelRef.current
     if (!el) return
     const obs = new IntersectionObserver(entries => {
-      if (entries[0].isIntersecting && hasMore && !loadingMore && !loading) {
-        loadPage(false, tab)
-      }
+      if (entries[0].isIntersecting && hasMore && !loadingMore && !loading) loadPage(false, tab)
     }, { rootMargin: '200px' })
     obs.observe(el)
     return () => obs.disconnect()
@@ -125,19 +99,18 @@ export default function Feed() {
 
   return (
     <div className="min-h-screen bg-background">
-      <header className="sticky top-0 z-10 bg-background/80 backdrop-blur border-b border-border">
-        <div className="px-4 py-3 flex items-center justify-between">
+      {/* header */}
+      <header className="sticky top-0 z-10 bg-background/95 backdrop-blur border-b border-border">
+        <div className="max-w-sm mx-auto px-4 pt-4 pb-0 flex items-center justify-between">
           <h1 className="font-display text-xl font-bold glow-text">GlowUp</h1>
         </div>
-        <div className="flex border-b border-border max-w-sm mx-auto">
+        <div className="max-w-sm mx-auto flex mt-1">
           {(['new', 'trending'] as Tab[]).map(t => (
             <button
               key={t}
               onClick={() => setTab(t)}
-              className={`flex-1 py-2.5 text-xs font-mono tracking-widest transition-colors ${
-                tab === t
-                  ? 'text-primary border-b-2 border-primary'
-                  : 'text-muted-foreground hover:text-foreground'
+              className={`flex-1 py-3 text-xs font-mono tracking-widest transition-colors border-b-2 ${
+                tab === t ? 'text-primary border-primary' : 'text-muted-foreground border-transparent'
               }`}
             >
               {t}
@@ -146,22 +119,35 @@ export default function Feed() {
         </div>
       </header>
 
-      <main className="max-w-sm mx-auto px-4 pt-6 pb-24 space-y-6">
-        {loading && Array.from({ length: 3 }).map((_, i) => (
-          <GlowCardSkeleton key={i} />
-        ))}
+      <main className="max-w-sm mx-auto px-4 pt-5 pb-28 space-y-5">
+        {/* skeletons */}
+        {loading && Array.from({ length: 3 }).map((_, i) => <GlowCardSkeleton key={i} />)}
 
+        {/* error */}
         {error && (
-          <div className="text-center py-16 space-y-2">
-            <p className="text-destructive text-sm">{error}</p>
-            <button onClick={() => loadPage(true, tab)} className="text-xs text-muted-foreground hover:text-foreground underline">retry</button>
+          <div className="text-center py-16 space-y-4">
+            <p className="text-muted-foreground text-sm">something went wrong.</p>
+            <button
+              onClick={() => loadPage(true, tab)}
+              className="px-5 py-3 bg-primary text-primary-foreground rounded-full font-display font-bold text-sm glow-shadow"
+            >
+              Try again
+            </button>
           </div>
         )}
 
+        {/* empty state */}
         {!loading && !error && posts.length === 0 && (
-          <div className="text-center py-16 space-y-2">
-            <p className="font-display text-lg">no glow-ups yet.</p>
-            <p className="text-sm text-muted-foreground">be the first to share your transformation.</p>
+          <div className="flex flex-col items-center text-center py-20 space-y-5">
+            <p className="font-display text-2xl font-bold">nothing here yet.</p>
+            <p className="text-sm text-muted-foreground">be the first to share a glow-up.</p>
+            <motion.button
+              whileTap={{ scale: 0.96 }}
+              onClick={() => navigate('/create')}
+              className="px-6 py-3.5 bg-primary text-primary-foreground rounded-full font-display font-bold text-sm glow-shadow"
+            >
+              Share yours
+            </motion.button>
           </div>
         )}
 
@@ -177,6 +163,17 @@ export default function Feed() {
           </div>
         )}
       </main>
+
+      {/* create FAB */}
+      <motion.button
+        whileTap={{ scale: 0.92 }}
+        onClick={() => navigate('/create')}
+        className="fixed bottom-20 right-5 z-30 w-14 h-14 rounded-full bg-primary text-primary-foreground flex items-center justify-center glow-shadow-lg shadow-lg"
+        aria-label="Post a glow-up"
+      >
+        <Plus size={24} strokeWidth={2.5} />
+      </motion.button>
+
       <BottomNav />
     </div>
   )

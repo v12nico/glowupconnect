@@ -1,6 +1,6 @@
-import { useRef, useState } from 'react'
+import { useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Heart, MessageCircle, Eye, MoreHorizontal } from 'lucide-react'
+import { Heart, MessageCircle, MoreHorizontal } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/context/AuthContext'
 import type { FeedPost } from '@/types/database'
@@ -8,7 +8,7 @@ import Comments from './Comments'
 import ReportModal from './ReportModal'
 
 interface Props {
-  post: FeedPost
+  post:     FeedPost
   onUpdate: (id: string, patch: Partial<FeedPost>) => void
 }
 
@@ -17,19 +17,38 @@ export default function GlowCard({ post, onUpdate }: Props) {
   const { transformation: t, profile, like_count, comment_count, viewer_liked } = post
 
   const [revealed, setRevealed]         = useState(false)
+  const [glowPulse, setGlowPulse]       = useState(false)
   const [liked, setLiked]               = useState(viewer_liked)
   const [likes, setLikes]               = useState(like_count)
   const [comments, setComments]         = useState(comment_count)
   const [showComments, setShowComments] = useState(false)
   const [liking, setLiking]             = useState(false)
-  const [beforeLoaded, setBeforeLoaded] = useState(false)
-  const [afterLoaded, setAfterLoaded]   = useState(false)
   const [menuOpen, setMenuOpen]         = useState(false)
   const [reportOpen, setReportOpen]     = useState(false)
-  const menuRef = useRef<HTMLDivElement>(null)
+  const [beforeLoaded, setBeforeLoaded] = useState(false)
 
   const beforeUrl = supabase.storage.from('glowups').getPublicUrl(t.before_url).data.publicUrl
   const afterUrl  = supabase.storage.from('glowups').getPublicUrl(t.after_url).data.publicUrl
+
+  function handleReveal() {
+    setRevealed(true)
+    setGlowPulse(true)
+  }
+
+  async function toggleLike() {
+    if (!user || liking) return
+    setLiking(true)
+    if (liked) {
+      setLiked(false); setLikes(l => l - 1)
+      onUpdate(t.id, { viewer_liked: false, like_count: likes - 1 })
+      await supabase.from('likes').delete().eq('user_id', user.id).eq('transformation_id', t.id)
+    } else {
+      setLiked(true); setLikes(l => l + 1)
+      onUpdate(t.id, { viewer_liked: true, like_count: likes + 1 })
+      await supabase.from('likes').upsert({ user_id: user.id, transformation_id: t.id, revealed_first: revealed })
+    }
+    setLiking(false)
+  }
 
   async function blockUser() {
     if (!user) return
@@ -37,31 +56,11 @@ export default function GlowCard({ post, onUpdate }: Props) {
     setMenuOpen(false)
   }
 
-  async function toggleLike() {
-    if (!user || liking) return
-    setLiking(true)
-    if (liked) {
-      await supabase.from('likes').delete()
-        .eq('user_id', user.id).eq('transformation_id', t.id)
-      setLiked(false)
-      setLikes(l => l - 1)
-      onUpdate(t.id, { viewer_liked: false, like_count: likes - 1 })
-    } else {
-      await supabase.from('likes').upsert({
-        user_id: user.id, transformation_id: t.id, revealed_first: revealed,
-      })
-      setLiked(true)
-      setLikes(l => l + 1)
-      onUpdate(t.id, { viewer_liked: true, like_count: likes + 1 })
-    }
-    setLiking(false)
-  }
-
   return (
-    <div className="w-full max-w-sm mx-auto bg-card rounded-lg overflow-hidden border border-border card-shine">
-      {/* image */}
+    <div className="w-full max-w-sm mx-auto bg-card rounded-2xl overflow-hidden border border-border card-shine">
+
+      {/* ── image ── */}
       <div className="relative aspect-[3/4] bg-secondary overflow-hidden">
-        {/* skeleton shown until image loads */}
         {!beforeLoaded && <div className="absolute inset-0 skeleton rounded-none" />}
 
         <img
@@ -71,65 +70,75 @@ export default function GlowCard({ post, onUpdate }: Props) {
           className={`absolute inset-0 w-full h-full object-cover transition-opacity duration-500 ${beforeLoaded ? 'opacity-100' : 'opacity-0'}`}
         />
 
+        {/* after — clip-path wipe from bottom */}
         <AnimatePresence>
           {revealed && (
-            <motion.div
+            <motion.img
               key="after"
-              className="absolute inset-0"
-              initial={{ opacity: 0 }}
-              animate={{ opacity: afterLoaded ? 1 : 0 }}
-              exit={{ opacity: 0 }}
-              transition={{ duration: 0.4, ease: 'easeInOut' }}
-            >
-              <img
-                src={afterUrl}
-                alt="after"
-                onLoad={() => setAfterLoaded(true)}
-                className="w-full h-full object-cover"
-              />
-            </motion.div>
+              src={afterUrl}
+              alt="after"
+              className="absolute inset-0 w-full h-full object-cover"
+              initial={{ clipPath: 'inset(100% 0 0 0)' }}
+              animate={{ clipPath: 'inset(0% 0 0 0)' }}
+              transition={{ duration: 0.55, ease: [0.32, 0.72, 0, 1] }}
+            />
           )}
         </AnimatePresence>
 
+        {/* glow pulse after reveal */}
+        <AnimatePresence>
+          {glowPulse && (
+            <motion.div
+              className="absolute inset-0 pointer-events-none rounded-none"
+              style={{ boxShadow: 'inset 0 0 80px hsl(31 69% 55% / 0.55)' }}
+              initial={{ opacity: 0 }}
+              animate={{ opacity: [0, 1, 0] }}
+              transition={{ duration: 1.4, times: [0, 0.25, 1] }}
+              onAnimationComplete={() => setGlowPulse(false)}
+            />
+          )}
+        </AnimatePresence>
+
+        {/* before/after pill */}
         <div className="absolute top-3 left-3 z-10">
-          <span className="text-xs font-mono tracking-widest px-2 py-1 rounded-full bg-black/60 text-white/70">
+          <span className="text-[11px] font-mono tracking-widest px-2.5 py-1 rounded-full bg-black/70 text-white/60">
             {revealed ? 'after' : 'before'}
           </span>
         </div>
 
+        {/* reveal button — the hero CTA */}
         {!revealed && (
-          <div className="absolute inset-x-0 bottom-0 z-10 p-4 bg-gradient-to-t from-black/80 to-transparent flex justify-center">
+          <div className="absolute inset-x-0 bottom-0 z-10 pb-5 flex justify-center bg-gradient-to-t from-black/85 via-black/30 to-transparent pt-12">
             <motion.button
-              onClick={() => setRevealed(true)}
-              whileTap={{ scale: 0.95 }}
-              className="flex items-center gap-2 px-5 py-2.5 bg-primary text-primary-foreground rounded-full font-display font-bold text-sm glow-shadow hover:opacity-90 transition-opacity"
+              onClick={handleReveal}
+              whileTap={{ scale: 0.94 }}
+              className="flex items-center gap-2 px-6 py-3.5 bg-primary text-primary-foreground rounded-full font-display font-bold text-sm glow-shadow-lg hover:opacity-95 transition-opacity"
             >
-              <Eye size={15} />
-              reveal the glow-up
+              Reveal
             </motion.button>
           </div>
         )}
       </div>
 
-      {/* body */}
-      <div className="p-4 space-y-3">
-        <div className="flex items-center gap-2">
-          <div className="w-7 h-7 rounded-full bg-primary/20 flex items-center justify-center text-xs font-display font-bold text-primary shrink-0">
+      {/* ── body ── */}
+      <div className="px-4 pt-3.5 pb-4 space-y-3">
+        <div className="flex items-center gap-2.5">
+          <div className="w-8 h-8 rounded-full bg-primary/15 flex items-center justify-center text-xs font-display font-bold text-primary shrink-0">
             {profile.display_name[0].toUpperCase()}
           </div>
-          <div className="min-w-0">
+          <div className="min-w-0 flex-1">
             <p className="text-sm font-display font-bold leading-none truncate">{profile.display_name}</p>
-            <p className="text-xs text-muted-foreground">@{profile.username}</p>
+            <p className="text-xs text-muted-foreground mt-0.5">@{profile.username}</p>
           </div>
-          <span className="ml-auto shrink-0 text-xs px-2 py-0.5 rounded-full bg-secondary text-muted-foreground capitalize">
+          <span className="text-[11px] px-2 py-0.5 rounded-full bg-secondary text-muted-foreground capitalize shrink-0">
             {t.category.replace('_', ' ')}
           </span>
 
-          {/* 3-dot menu */}
-          <div ref={menuRef} className="relative shrink-0">
+          {/* 3-dot */}
+          <div className="relative shrink-0">
             <button
               onClick={() => setMenuOpen(v => !v)}
-              className="text-muted-foreground hover:text-foreground transition-colors p-1"
+              className="w-8 h-8 flex items-center justify-center text-muted-foreground hover:text-foreground transition-colors"
             >
               <MoreHorizontal size={16} />
             </button>
@@ -140,21 +149,21 @@ export default function GlowCard({ post, onUpdate }: Props) {
                   <motion.div
                     initial={{ opacity: 0, scale: 0.95, y: -4 }}
                     animate={{ opacity: 1, scale: 1, y: 0 }}
-                    exit={{ opacity: 0, scale: 0.95, y: -4 }}
+                    exit={{ opacity: 0, scale: 0.95 }}
                     transition={{ duration: 0.12 }}
-                    className="absolute right-0 top-7 z-20 bg-card border border-border rounded-lg overflow-hidden min-w-[140px] shadow-lg"
+                    className="absolute right-0 top-9 z-20 bg-card border border-border rounded-xl overflow-hidden min-w-[148px] shadow-xl"
                   >
                     <button
                       onClick={() => { setMenuOpen(false); setReportOpen(true) }}
-                      className="w-full text-left px-4 py-2.5 text-sm text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors"
+                      className="w-full text-left px-4 py-3 text-sm text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors"
                     >
-                      report post
+                      Report post
                     </button>
                     <button
                       onClick={blockUser}
-                      className="w-full text-left px-4 py-2.5 text-sm text-destructive hover:bg-secondary transition-colors"
+                      className="w-full text-left px-4 py-3 text-sm text-destructive hover:bg-secondary transition-colors border-t border-border"
                     >
-                      block user
+                      Block user
                     </button>
                   </motion.div>
                 </>
@@ -167,23 +176,23 @@ export default function GlowCard({ post, onUpdate }: Props) {
           <p className="text-sm text-muted-foreground leading-relaxed line-clamp-3">{t.story}</p>
         )}
 
-        <div className="flex items-center gap-4 pt-1">
+        <div className="flex items-center gap-5 pt-0.5">
           <motion.button
             onClick={toggleLike}
             disabled={liking}
-            whileTap={{ scale: liked ? 0.85 : 1.3 }}
-            transition={{ type: 'spring', stiffness: 400, damping: 15 }}
-            className={`flex items-center gap-1.5 text-sm transition-colors ${liked ? 'text-primary' : 'text-muted-foreground hover:text-foreground'}`}
+            whileTap={{ scale: liked ? 0.8 : 1.35 }}
+            transition={{ type: 'spring', stiffness: 500, damping: 15 }}
+            className={`flex items-center gap-1.5 text-sm min-h-[44px] pr-2 transition-colors ${liked ? 'text-primary' : 'text-muted-foreground hover:text-foreground'}`}
           >
-            <Heart size={16} fill={liked ? 'currentColor' : 'none'} />
+            <Heart size={18} fill={liked ? 'currentColor' : 'none'} strokeWidth={liked ? 0 : 1.75} />
             <span>{likes}</span>
           </motion.button>
 
           <button
             onClick={() => setShowComments(v => !v)}
-            className={`flex items-center gap-1.5 text-sm transition-colors ${showComments ? 'text-foreground' : 'text-muted-foreground hover:text-foreground'}`}
+            className={`flex items-center gap-1.5 text-sm min-h-[44px] pr-2 transition-colors ${showComments ? 'text-foreground' : 'text-muted-foreground hover:text-foreground'}`}
           >
-            <MessageCircle size={16} />
+            <MessageCircle size={18} strokeWidth={1.75} />
             <span>{comments}</span>
           </button>
         </div>

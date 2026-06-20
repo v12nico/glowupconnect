@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
+import { motion } from 'framer-motion'
 import { ArrowLeft, Send, ShieldOff } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/context/AuthContext'
@@ -12,15 +13,16 @@ interface OtherUser {
 }
 
 export default function Chat() {
-  const { matchId }       = useParams<{ matchId: string }>()
-  const navigate          = useNavigate()
-  const { user }          = useAuth()
+  const { matchId }    = useParams<{ matchId: string }>()
+  const navigate       = useNavigate()
+  const { user }       = useAuth()
   const [messages, setMessages] = useState<Message[]>([])
   const [other, setOther]       = useState<OtherUser | null>(null)
   const [body, setBody]         = useState('')
   const [sending, setSending]   = useState(false)
   const [blocked, setBlocked]   = useState(false)
-  const bottomRef             = useRef<HTMLDivElement>(null)
+  const [loading, setLoading]   = useState(true)
+  const bottomRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     if (!matchId || !user) return
@@ -31,9 +33,7 @@ export default function Chat() {
       .on(
         'postgres_changes',
         { event: 'INSERT', schema: 'public', table: 'messages', filter: `match_id=eq.${matchId}` },
-        payload => {
-          setMessages(prev => [...prev, payload.new as Message])
-        }
+        payload => setMessages(prev => [...prev, payload.new as Message])
       )
       .subscribe()
 
@@ -45,13 +45,8 @@ export default function Chat() {
   }, [messages])
 
   async function loadChat() {
-    // get match to find the other user
     const { data: match } = await supabase
-      .from('matches')
-      .select('user_low, user_high')
-      .eq('id', matchId)
-      .single()
-
+      .from('matches').select('user_low, user_high').eq('id', matchId).single()
     if (!match) return
 
     const otherId = match.user_low === user!.id ? match.user_high : match.user_low
@@ -63,6 +58,7 @@ export default function Chat() {
 
     if (profile) setOther(profile)
     if (msgs)    setMessages(msgs)
+    setLoading(false)
   }
 
   async function block() {
@@ -84,30 +80,52 @@ export default function Chat() {
 
   return (
     <div className="min-h-screen bg-background flex flex-col">
-      <header className="sticky top-0 z-10 bg-background/80 backdrop-blur border-b border-border px-4 py-3 flex items-center gap-3">
-        <button onClick={() => navigate('/matches')} className="text-muted-foreground hover:text-foreground transition-colors">
-          <ArrowLeft size={18} />
+      <header className="sticky top-0 z-10 bg-background/95 backdrop-blur border-b border-border px-4 py-3 flex items-center gap-3">
+        <button
+          onClick={() => navigate('/matches')}
+          className="w-10 h-10 flex items-center justify-center text-muted-foreground hover:text-foreground transition-colors shrink-0"
+        >
+          <ArrowLeft size={20} />
         </button>
         <div className="flex-1 min-w-0">
-          <p className="font-display font-bold text-sm leading-tight">{other?.display_name ?? '…'}</p>
+          <p className="font-display font-bold text-sm leading-tight truncate">{other?.display_name ?? '…'}</p>
           <p className="text-xs text-muted-foreground">@{other?.username}</p>
         </div>
         {blocked
-          ? <p className="text-xs text-destructive">blocked</p>
+          ? <p className="text-xs text-destructive shrink-0">blocked</p>
           : (
-            <button onClick={block} className="text-muted-foreground hover:text-destructive transition-colors ml-auto shrink-0">
-              <ShieldOff size={16} />
+            <button
+              onClick={block}
+              className="w-10 h-10 flex items-center justify-center text-muted-foreground hover:text-destructive transition-colors shrink-0"
+            >
+              <ShieldOff size={18} />
             </button>
           )
         }
       </header>
 
-      <main className="flex-1 overflow-y-auto px-4 py-4 pb-4 space-y-3 max-w-sm mx-auto w-full">
+      <main className="flex-1 overflow-y-auto px-4 py-4 space-y-2 max-w-sm mx-auto w-full">
+        {loading && (
+          <div className="space-y-3 pt-4">
+            {Array.from({ length: 5 }).map((_, i) => (
+              <div key={i} className={`flex ${i % 2 === 0 ? 'justify-end' : 'justify-start'}`}>
+                <div className={`h-9 skeleton rounded-2xl ${i % 2 === 0 ? 'w-40' : 'w-52'}`} />
+              </div>
+            ))}
+          </div>
+        )}
+
+        {!loading && messages.length === 0 && (
+          <div className="flex items-center justify-center h-40">
+            <p className="text-sm text-muted-foreground">say something.</p>
+          </div>
+        )}
+
         {messages.map(m => {
           const mine = m.sender_id === user!.id
           return (
             <div key={m.id} className={`flex ${mine ? 'justify-end' : 'justify-start'}`}>
-              <div className={`max-w-[75%] px-4 py-2.5 rounded-2xl text-sm ${
+              <div className={`max-w-[75%] px-4 py-2.5 rounded-2xl text-sm leading-relaxed ${
                 mine
                   ? 'bg-primary text-primary-foreground rounded-br-sm'
                   : 'bg-card border border-border text-foreground rounded-bl-sm'
@@ -122,21 +140,22 @@ export default function Chat() {
 
       <form
         onSubmit={send}
-        className="sticky bottom-0 bg-background border-t border-border px-4 py-3 flex items-center gap-3 max-w-sm mx-auto w-full"
+        className="sticky bottom-0 bg-background/95 backdrop-blur border-t border-border px-4 py-3 flex items-center gap-3 max-w-sm mx-auto w-full"
       >
         <input
           value={body}
           onChange={e => setBody(e.target.value)}
-          placeholder="say something…"
-          className="flex-1 bg-card border border-border rounded-full px-4 py-2.5 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-glow transition-colors"
+          placeholder="Message…"
+          className="flex-1 bg-card border border-border rounded-full px-4 py-3 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-primary transition-colors"
         />
-        <button
+        <motion.button
           type="submit"
           disabled={!body.trim() || sending}
-          className="w-9 h-9 rounded-full bg-primary text-primary-foreground flex items-center justify-center shrink-0 glow-shadow hover:opacity-90 transition-opacity disabled:opacity-40"
+          whileTap={{ scale: 0.9 }}
+          className="w-11 h-11 rounded-full bg-primary text-primary-foreground flex items-center justify-center shrink-0 glow-shadow disabled:opacity-40 transition-opacity"
         >
-          <Send size={14} />
-        </button>
+          <Send size={16} />
+        </motion.button>
       </form>
     </div>
   )
