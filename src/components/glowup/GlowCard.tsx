@@ -1,10 +1,11 @@
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Heart, MessageCircle, Eye } from 'lucide-react'
+import { Heart, MessageCircle, Eye, MoreHorizontal } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/context/AuthContext'
 import type { FeedPost } from '@/types/database'
 import Comments from './Comments'
+import ReportModal from './ReportModal'
 
 interface Props {
   post: FeedPost
@@ -23,9 +24,18 @@ export default function GlowCard({ post, onUpdate }: Props) {
   const [liking, setLiking]             = useState(false)
   const [beforeLoaded, setBeforeLoaded] = useState(false)
   const [afterLoaded, setAfterLoaded]   = useState(false)
+  const [menuOpen, setMenuOpen]         = useState(false)
+  const [reportOpen, setReportOpen]     = useState(false)
+  const menuRef = useRef<HTMLDivElement>(null)
 
   const beforeUrl = supabase.storage.from('glowups').getPublicUrl(t.before_url).data.publicUrl
   const afterUrl  = supabase.storage.from('glowups').getPublicUrl(t.after_url).data.publicUrl
+
+  async function blockUser() {
+    if (!user) return
+    await supabase.from('blocks').insert({ blocker_id: user.id, blocked_id: profile.id })
+    setMenuOpen(false)
+  }
 
   async function toggleLike() {
     if (!user || liking) return
@@ -114,6 +124,43 @@ export default function GlowCard({ post, onUpdate }: Props) {
           <span className="ml-auto shrink-0 text-xs px-2 py-0.5 rounded-full bg-secondary text-muted-foreground capitalize">
             {t.category.replace('_', ' ')}
           </span>
+
+          {/* 3-dot menu */}
+          <div ref={menuRef} className="relative shrink-0">
+            <button
+              onClick={() => setMenuOpen(v => !v)}
+              className="text-muted-foreground hover:text-foreground transition-colors p-1"
+            >
+              <MoreHorizontal size={16} />
+            </button>
+            <AnimatePresence>
+              {menuOpen && (
+                <>
+                  <div className="fixed inset-0 z-10" onClick={() => setMenuOpen(false)} />
+                  <motion.div
+                    initial={{ opacity: 0, scale: 0.95, y: -4 }}
+                    animate={{ opacity: 1, scale: 1, y: 0 }}
+                    exit={{ opacity: 0, scale: 0.95, y: -4 }}
+                    transition={{ duration: 0.12 }}
+                    className="absolute right-0 top-7 z-20 bg-card border border-border rounded-lg overflow-hidden min-w-[140px] shadow-lg"
+                  >
+                    <button
+                      onClick={() => { setMenuOpen(false); setReportOpen(true) }}
+                      className="w-full text-left px-4 py-2.5 text-sm text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors"
+                    >
+                      report post
+                    </button>
+                    <button
+                      onClick={blockUser}
+                      className="w-full text-left px-4 py-2.5 text-sm text-destructive hover:bg-secondary transition-colors"
+                    >
+                      block user
+                    </button>
+                  </motion.div>
+                </>
+              )}
+            </AnimatePresence>
+          </div>
         </div>
 
         {t.story && (
@@ -146,6 +193,13 @@ export default function GlowCard({ post, onUpdate }: Props) {
         transformationId={t.id}
         open={showComments}
         onCountChange={delta => setComments(c => c + delta)}
+      />
+
+      <ReportModal
+        open={reportOpen}
+        onClose={() => setReportOpen(false)}
+        targetPost={t.id}
+        targetUser={profile.id}
       />
     </div>
   )

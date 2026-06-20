@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
-import { ArrowLeft, Send } from 'lucide-react'
+import { ArrowLeft, Send, ShieldOff } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/context/AuthContext'
 import type { Message } from '@/types/database'
@@ -19,6 +19,7 @@ export default function Chat() {
   const [other, setOther]       = useState<OtherUser | null>(null)
   const [body, setBody]         = useState('')
   const [sending, setSending]   = useState(false)
+  const [blocked, setBlocked]   = useState(false)
   const bottomRef             = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -64,6 +65,13 @@ export default function Chat() {
     if (msgs)    setMessages(msgs)
   }
 
+  async function block() {
+    if (!other || !user) return
+    await supabase.from('blocks').insert({ blocker_id: user.id, blocked_id: other.id })
+    setBlocked(true)
+    setTimeout(() => navigate('/matches'), 1200)
+  }
+
   async function send(e: React.FormEvent) {
     e.preventDefault()
     const text = body.trim()
@@ -80,10 +88,18 @@ export default function Chat() {
         <button onClick={() => navigate('/matches')} className="text-muted-foreground hover:text-foreground transition-colors">
           <ArrowLeft size={18} />
         </button>
-        <div>
+        <div className="flex-1 min-w-0">
           <p className="font-display font-bold text-sm leading-tight">{other?.display_name ?? '…'}</p>
           <p className="text-xs text-muted-foreground">@{other?.username}</p>
         </div>
+        {blocked
+          ? <p className="text-xs text-destructive">blocked</p>
+          : (
+            <button onClick={block} className="text-muted-foreground hover:text-destructive transition-colors ml-auto shrink-0">
+              <ShieldOff size={16} />
+            </button>
+          )
+        }
       </header>
 
       <main className="flex-1 overflow-y-auto px-4 py-4 pb-4 space-y-3 max-w-sm mx-auto w-full">
