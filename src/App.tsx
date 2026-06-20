@@ -10,6 +10,7 @@ import EditProfile from '@/pages/EditProfile'
 import Dating from '@/pages/Dating'
 import Matches from '@/pages/Matches'
 import Chat from '@/pages/Chat'
+import MatchToast from '@/components/glowup/MatchToast'
 
 function RequireAuth({ children }: { children: React.ReactNode }) {
   const { session, loading } = useAuth()
@@ -81,6 +82,7 @@ export default function App() {
   return (
     <BrowserRouter>
       <AuthProvider>
+        <MatchToast />
         <AppRoutes />
       </AuthProvider>
     </BrowserRouter>
