@@ -3,6 +3,7 @@ import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/context/AuthContext'
 import type { FeedPost } from '@/types/database'
 import GlowCard from '@/components/glowup/GlowCard'
+import GlowCardSkeleton from '@/components/glowup/GlowCardSkeleton'
 import BottomNav from '@/components/glowup/BottomNav'
 
 type Tab = 'new' | 'trending'
@@ -146,11 +147,9 @@ export default function Feed() {
       </header>
 
       <main className="max-w-sm mx-auto px-4 pt-6 pb-24 space-y-6">
-        {loading && (
-          <div className="flex justify-center py-16">
-            <div className="w-6 h-6 rounded-full border-2 border-primary border-t-transparent animate-spin" />
-          </div>
-        )}
+        {loading && Array.from({ length: 3 }).map((_, i) => (
+          <GlowCardSkeleton key={i} />
+        ))}
 
         {error && (
           <div className="text-center py-16 space-y-2">

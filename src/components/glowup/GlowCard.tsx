@@ -15,12 +15,14 @@ export default function GlowCard({ post, onUpdate }: Props) {
   const { user } = useAuth()
   const { transformation: t, profile, like_count, comment_count, viewer_liked } = post
 
-  const [revealed, setRevealed]           = useState(false)
-  const [liked, setLiked]                 = useState(viewer_liked)
-  const [likes, setLikes]                 = useState(like_count)
-  const [comments, setComments]           = useState(comment_count)
-  const [showComments, setShowComments]   = useState(false)
-  const [liking, setLiking]               = useState(false)
+  const [revealed, setRevealed]         = useState(false)
+  const [liked, setLiked]               = useState(viewer_liked)
+  const [likes, setLikes]               = useState(like_count)
+  const [comments, setComments]         = useState(comment_count)
+  const [showComments, setShowComments] = useState(false)
+  const [liking, setLiking]             = useState(false)
+  const [beforeLoaded, setBeforeLoaded] = useState(false)
+  const [afterLoaded, setAfterLoaded]   = useState(false)
 
   const beforeUrl = supabase.storage.from('glowups').getPublicUrl(t.before_url).data.publicUrl
   const afterUrl  = supabase.storage.from('glowups').getPublicUrl(t.after_url).data.publicUrl
@@ -48,39 +50,53 @@ export default function GlowCard({ post, onUpdate }: Props) {
   return (
     <div className="w-full max-w-sm mx-auto bg-card rounded-lg overflow-hidden border border-border card-shine">
       {/* image */}
-      <div className="relative aspect-[3/4] bg-muted overflow-hidden">
-        <img src={beforeUrl} alt="before" className="absolute inset-0 w-full h-full object-cover" />
+      <div className="relative aspect-[3/4] bg-secondary overflow-hidden">
+        {/* skeleton shown until image loads */}
+        {!beforeLoaded && <div className="absolute inset-0 skeleton rounded-none" />}
+
+        <img
+          src={beforeUrl}
+          alt="before"
+          onLoad={() => setBeforeLoaded(true)}
+          className={`absolute inset-0 w-full h-full object-cover transition-opacity duration-500 ${beforeLoaded ? 'opacity-100' : 'opacity-0'}`}
+        />
 
         <AnimatePresence>
           {revealed && (
-            <motion.img
+            <motion.div
               key="after"
-              src={afterUrl}
-              alt="after"
-              className="absolute inset-0 w-full h-full object-cover"
+              className="absolute inset-0"
               initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
+              animate={{ opacity: afterLoaded ? 1 : 0 }}
               exit={{ opacity: 0 }}
               transition={{ duration: 0.4, ease: 'easeInOut' }}
-            />
+            >
+              <img
+                src={afterUrl}
+                alt="after"
+                onLoad={() => setAfterLoaded(true)}
+                className="w-full h-full object-cover"
+              />
+            </motion.div>
           )}
         </AnimatePresence>
 
-        <div className="absolute top-3 left-3">
-          <span className="text-xs font-mono tracking-widest px-2 py-1 rounded-full bg-black/60 text-foreground/70">
+        <div className="absolute top-3 left-3 z-10">
+          <span className="text-xs font-mono tracking-widest px-2 py-1 rounded-full bg-black/60 text-white/70">
             {revealed ? 'after' : 'before'}
           </span>
         </div>
 
         {!revealed && (
-          <div className="absolute inset-x-0 bottom-0 p-4 bg-gradient-to-t from-black/80 to-transparent flex justify-center">
-            <button
+          <div className="absolute inset-x-0 bottom-0 z-10 p-4 bg-gradient-to-t from-black/80 to-transparent flex justify-center">
+            <motion.button
               onClick={() => setRevealed(true)}
-              className="flex items-center gap-2 px-5 py-2.5 bg-primary text-primary-foreground rounded-full font-display font-bold text-sm hover:opacity-90 transition-opacity glow-shadow"
+              whileTap={{ scale: 0.95 }}
+              className="flex items-center gap-2 px-5 py-2.5 bg-primary text-primary-foreground rounded-full font-display font-bold text-sm glow-shadow hover:opacity-90 transition-opacity"
             >
               <Eye size={15} />
               reveal the glow-up
-            </button>
+            </motion.button>
           </div>
         )}
       </div>
@@ -88,7 +104,7 @@ export default function GlowCard({ post, onUpdate }: Props) {
       {/* body */}
       <div className="p-4 space-y-3">
         <div className="flex items-center gap-2">
-          <div className="w-7 h-7 rounded-full bg-secondary flex items-center justify-center text-xs font-display font-bold text-primary shrink-0">
+          <div className="w-7 h-7 rounded-full bg-primary/20 flex items-center justify-center text-xs font-display font-bold text-primary shrink-0">
             {profile.display_name[0].toUpperCase()}
           </div>
           <div className="min-w-0">
@@ -105,14 +121,16 @@ export default function GlowCard({ post, onUpdate }: Props) {
         )}
 
         <div className="flex items-center gap-4 pt-1">
-          <button
+          <motion.button
             onClick={toggleLike}
             disabled={liking}
+            whileTap={{ scale: liked ? 0.85 : 1.3 }}
+            transition={{ type: 'spring', stiffness: 400, damping: 15 }}
             className={`flex items-center gap-1.5 text-sm transition-colors ${liked ? 'text-primary' : 'text-muted-foreground hover:text-foreground'}`}
           >
             <Heart size={16} fill={liked ? 'currentColor' : 'none'} />
             <span>{likes}</span>
-          </button>
+          </motion.button>
 
           <button
             onClick={() => setShowComments(v => !v)}
